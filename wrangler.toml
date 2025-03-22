@@ -1,3 +1,7 @@
 name = "play"
 main = "worker.js"
 compatibility_date = "2025-03-22"
+
+[[kv_namespaces]]
+binding = "M3U_DATA"
+id = "f7707718c65048988e400bddfb3bc603"
