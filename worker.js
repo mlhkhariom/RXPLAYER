@@ -1,158 +1,84 @@
 export default {
-  async fetch(request, env) {
-    try {
-      const url = new URL(request.url);
-      const path = url.pathname;
+    async fetch(request, env) {
+        try {
+            const url = new URL(request.url);
+            const path = url.pathname;
 
-      if (path === "/") {
-        return new Response(await generateHomePage(env), { headers: { "Content-Type": "text/html" } });
-      } else if (path.startsWith("/api/add-m3u")) {
-        return await handleAddM3U(request, env);
-      } else if (path.startsWith("/api/get-m3u")) {
-        return await handleGetM3U(env);
-      } else if (path.startsWith("/play/")) {
-        const streamUrl = decodeURIComponent(url.searchParams.get("stream"));
-        return new Response(await generateVideoPlayer(streamUrl), { headers: { "Content-Type": "text/html" } });
-      } else {
-        return new Response("404 Not Found", { status: 404 });
-      }
-    } catch (error) {
-      return new Response(`Error: ${error.message}`, { status: 500 });
+            if (path === "/") {
+                return new Response(await generateHomePage(env), { headers: { "Content-Type": "text/html" } });
+            } else if (path.startsWith("/play/")) {
+                const id = path.split("/")[2];
+                return new Response(await generatePlayerPage(id, env), { headers: { "Content-Type": "text/html" } });
+            } else if (path === "/api/m3u") {
+                return handleM3URequest(request, env);
+            } else if (path === "/api/update-m3u") {
+                return updateM3UStorage(request, env);
+            } else {
+                return new Response("Not Found", { status: 404 });
+            }
+        } catch (error) {
+            return new Response(`Error: ${error.message}`, { status: 500 });
+        }
     }
-  }
 };
 
-// 📌 Generate Homepage UI
+// Serve Homepage with M3U List
 async function generateHomePage(env) {
-  const m3uListHtml = await handleGetM3U(env);
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>M3U Stream Manager</title>
-      <style>
-        body { font-family: Arial, sans-serif; text-align: center; background: #181818; color: white; }
-        h1 { color: #ff3d00; }
-        input, button { padding: 10px; margin: 10px; }
-        .m3u-container { width: 60%; margin: auto; text-align: left; }
-        .m3u-box { background: #333; padding: 10px; margin: 10px; border-radius: 5px; }
-        .stream-links { display: flex; flex-wrap: wrap; gap: 5px; }
-        .stream-box { background: #555; padding: 5px 10px; border-radius: 3px; cursor: pointer; }
-      </style>
-    </head>
-    <body>
-      <h1>M3U Stream Manager</h1>
-      <form onsubmit="addM3U(event)">
-        <input type="text" id="m3u-url" placeholder="Enter M3U URL" required>
-        <button type="submit">Add M3U</button>
-      </form>
-      <div class="m3u-container">${m3uListHtml}</div>
-      <script>
-        async function addM3U(event) {
-          event.preventDefault();
-          let url = document.getElementById("m3u-url").value;
-          let response = await fetch("/api/add-m3u?url=" + encodeURIComponent(url), { method: "POST" });
-          let result = await response.json();
-          alert(result.message);
-          location.reload();
-        }
-        function playStream(url) {
-          window.location.href = "/play/?stream=" + encodeURIComponent(url);
-        }
-      </script>
-    </body>
-    </html>
-  `;
+    const m3uData = await env.KV_NAMESPACE.get("m3u_list") || "No M3U data available.";
+    return `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <title>Ultra Video Player</title>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/video.js/7.20.3/video.min.js"></script>
+        </head>
+        <body>
+            <h1>Available M3U Playlists</h1>
+            <pre>${m3uData}</pre>
+            <button onclick="fetch('/api/update-m3u', { method: 'POST' })">Refresh M3U</button>
+        </body>
+        </html>
+    `;
 }
 
-// 📡 Add M3U URL to KV Storage
-async function handleAddM3U(request, env) {
-  try {
-    const url = new URL(request.url);
-    const m3uUrl = url.searchParams.get("url");
-    if (!m3uUrl) throw new Error("No URL provided");
-
-    await env.M3U_DATA.put(m3uUrl, "stored");
-    return new Response(JSON.stringify({ message: "M3U added successfully" }), { headers: { "Content-Type": "application/json" } });
-  } catch (error) {
-    return new Response(JSON.stringify({ message: `Error: ${error.message}` }), { status: 400, headers: { "Content-Type": "application/json" } });
-  }
+// Generate Video Player Page
+async function generatePlayerPage(id, env) {
+    return `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <title>Now Playing</title>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/video.js/7.20.3/video.min.js"></script>
+        </head>
+        <body>
+            <video id="video-player" class="video-js" controls preload="auto">
+                <source src="https://example.com/stream/${id}.m3u8" type="application/x-mpegURL">
+            </video>
+            <script>
+                var player = videojs("video-player", {
+                    fluid: true,
+                    responsive: true
+                });
+            </script>
+        </body>
+        </html>
+    `;
 }
 
-// 🔍 Fetch Stored M3U Links
-async function handleGetM3U(env) {
-  try {
-    const m3uList = await env.M3U_DATA.list();
-    let html = "";
-    for (const item of m3uList.keys) {
-      const streamsHtml = await extractM3UStreams(item.name);
-      html += `<div class="m3u-box">
-        <strong>${item.name}</strong>
-        <div class="stream-links">${streamsHtml}</div>
-      </div>`;
+// Handle M3U Requests
+async function handleM3URequest(request, env) {
+    const m3uData = await env.KV_NAMESPACE.get("m3u_list");
+    return new Response(m3uData || "No M3U data stored.", { headers: { "Content-Type": "text/plain" } });
+}
+
+// Update M3U Storage from API
+async function updateM3UStorage(request, env) {
+    try {
+        const response = await fetch("https://your-m3u-api.com/playlist.m3u");
+        const m3uText = await response.text();
+        await env.KV_NAMESPACE.put("m3u_list", m3uText);
+        return new Response("M3U List Updated Successfully!", { status: 200 });
+    } catch (error) {
+        return new Response(`Error Fetching M3U: ${error.message}`, { status: 500 });
     }
-    return html;
-  } catch (error) {
-    return `<p>Error: ${error.message}</p>`;
-  }
-}
-
-// 🛠 Extract Streams from M3U
-async function extractM3UStreams(m3uUrl) {
-  try {
-    const response = await fetch(m3uUrl, { method: "GET" });
-
-    if (!response.ok) {
-      return "<p>Error: Failed to fetch M3U file.</p>";
-    }
-
-    const text = await response.text();
-    const lines = text.split("\n").map(line => line.trim()).filter(line => line && !line.startsWith("#"));
-
-    if (lines.length === 0) {
-      return "<p>Error: No valid streams found in M3U file.</p>";
-    }
-
-    return lines.map(url => `<span class="stream-box" onclick="playStream('${url}')">${url}</span>`).join("");
-  } catch (error) {
-    return `<p>Error: ${error.message}</p>`;
-  }
-}
-
-// 🎥 Generate Video.js Player Page
-async function generateVideoPlayer(streamUrl) {
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Video.js Player</title>
-      <link href="https://cdnjs.cloudflare.com/ajax/libs/video.js/7.20.3/video-js.min.css" rel="stylesheet">
-      <script src="https://cdnjs.cloudflare.com/ajax/libs/video.js/7.20.3/video.min.js"></script>
-      <script src="https://cdn.jsdelivr.net/npm/videojs-http-streaming@2.12.1/dist/videojs-http-streaming.min.js"></script>
-      <style>
-        body { text-align: center; background: #181818; color: white; }
-        #player { width: 80%; height: auto; }
-      </style>
-    </head>
-    <body>
-      <h1>Video.js Player</h1>
-      <video id="video-player" class="video-js vjs-default-skin" controls preload="auto" width="100%" height="500">
-        <source src="${streamUrl}" type="application/x-mpegURL">
-      </video>
-      <script>
-        var player = videojs("video-player", {
-          fluid: true,
-          responsive: true,
-          playbackRates: [0.5, 1, 1.5, 2],
-          controlBar: {
-            volumePanel: { inline: false }
-          }
-        });
-        player.on("error", function() {
-          alert("Error loading video. Please try another stream.");
-        });
-      </script>
-    </body>
-    </html>
-  `;
 }
