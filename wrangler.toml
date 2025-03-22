@@ -2,6 +2,9 @@ name = "play"
 main = "worker.js"
 compatibility_date = "2025-03-22"
 
+[vars]
+M3U_KV_NAMESPACE = "M3U_LIST"
+
 [[kv_namespaces]]
 binding = "M3U_DATA"
 id = "f7707718c65048988e400bddfb3bc603"
