@@ -25,7 +25,7 @@ export default {
 // 📌 Generate Homepage UI
 async function generateHomePage(env) {
   try {
-    const m3uList = await env.M3U_DATA.list();
+    const m3uList = await handleGetM3U(env);
     let html = `
       <!DOCTYPE html>
       <html>
@@ -49,7 +49,7 @@ async function generateHomePage(env) {
           <button type="submit">Add M3U</button>
         </form>
         <div class="m3u-container">
-          ${await generateM3UList(env)}
+          ${m3uList}
         </div>
         <script>
           async function addM3U(event) {
@@ -88,9 +88,28 @@ async function handleAddM3U(request, env) {
 async function handleGetM3U(env) {
   try {
     const m3uList = await env.M3U_DATA.list();
-    return new Response(JSON.stringify(m3uList.keys.map(item => item.name)), { headers: { "Content-Type": "application/json" } });
+    let html = "";
+    for (const item of m3uList.keys) {
+      html += `<div class="m3u-box">
+        <strong>${item.name}</strong>
+        <div class="stream-links">${await extractM3UStreams(item.name)}</div>
+      </div>`;
+    }
+    return html;
   } catch (error) {
-    return new Response(`Error: ${error.message}`, { status: 500 });
+    return `<p>Error: ${error.message}</p>`;
+  }
+}
+
+// 🛠 Extract Streams from M3U
+async function extractM3UStreams(m3uUrl) {
+  try {
+    const response = await fetch(m3uUrl);
+    const text = await response.text();
+    const lines = text.split("\n").filter(line => line.trim() && !line.startsWith("#"));
+    return lines.map(url => `<span class="stream-box" onclick="playStream('${url}')">${url}</span>`).join("");
+  } catch {
+    return "<p>Failed to extract streams.</p>";
   }
 }
 
