@@ -12,7 +12,7 @@ export default {
         return await handleGetM3U(env);
       } else if (path.startsWith("/play/")) {
         const streamUrl = decodeURIComponent(url.searchParams.get("stream"));
-        return new Response(await generatePlayerPage(streamUrl), { headers: { "Content-Type": "text/html" } });
+        return new Response(await generateVideoPlayer(streamUrl), { headers: { "Content-Type": "text/html" } });
       } else {
         return new Response("404 Not Found", { status: 404 });
       }
@@ -29,8 +29,7 @@ async function generateHomePage(env) {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>RXPlayer M3U Manager</title>
-      <script src="https://cdn.jsdelivr.net/npm/jwplayer@8.29.0/jwplayer.js"></script>
+      <title>M3U Stream Manager</title>
       <style>
         body { font-family: Arial, sans-serif; text-align: center; background: #181818; color: white; }
         h1 { color: #ff3d00; }
@@ -42,7 +41,7 @@ async function generateHomePage(env) {
       </style>
     </head>
     <body>
-      <h1>RXPlayer M3U Manager</h1>
+      <h1>M3U Stream Manager</h1>
       <form onsubmit="addM3U(event)">
         <input type="text" id="m3u-url" placeholder="Enter M3U URL" required>
         <button type="submit">Add M3U</button>
@@ -98,42 +97,59 @@ async function handleGetM3U(env) {
   }
 }
 
-// 🛠 Extract Streams from M3U (FIXED)
+// 🛠 Extract Streams from M3U
 async function extractM3UStreams(m3uUrl) {
   try {
-    const response = await fetch(m3uUrl);
+    const response = await fetch(m3uUrl, { method: "GET" });
+
+    if (!response.ok) {
+      return "<p>Error: Failed to fetch M3U file.</p>";
+    }
+
     const text = await response.text();
-    const lines = text.split("\n").filter(line => line.trim() && !line.startsWith("#"));
+    const lines = text.split("\n").map(line => line.trim()).filter(line => line && !line.startsWith("#"));
+
+    if (lines.length === 0) {
+      return "<p>Error: No valid streams found in M3U file.</p>";
+    }
+
     return lines.map(url => `<span class="stream-box" onclick="playStream('${url}')">${url}</span>`).join("");
   } catch (error) {
-    console.error("Error extracting M3U streams:", error);
-    return "<p>Failed to extract streams.</p>";
+    return `<p>Error: ${error.message}</p>`;
   }
 }
 
-// 🎥 Generate Video Player Page (Auto Quality & Audio)
-async function generatePlayerPage(streamUrl) {
+// 🎥 Generate Video.js Player Page
+async function generateVideoPlayer(streamUrl) {
   return `
     <!DOCTYPE html>
     <html>
     <head>
-      <title>RXPlayer</title>
-      <script src="https://cdn.jsdelivr.net/npm/jwplayer@8.29.0/jwplayer.js"></script>
+      <title>Video.js Player</title>
+      <link href="https://cdnjs.cloudflare.com/ajax/libs/video.js/7.20.3/video-js.min.css" rel="stylesheet">
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/video.js/7.20.3/video.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/videojs-http-streaming@2.12.1/dist/videojs-http-streaming.min.js"></script>
       <style>
         body { text-align: center; background: #181818; color: white; }
         #player { width: 80%; height: auto; }
       </style>
     </head>
     <body>
-      <h1>RXPlayer</h1>
-      <div id="player"></div>
+      <h1>Video.js Player</h1>
+      <video id="video-player" class="video-js vjs-default-skin" controls preload="auto" width="100%" height="500">
+        <source src="${streamUrl}" type="application/x-mpegURL">
+      </video>
       <script>
-        jwplayer("player").setup({
-          file: "${streamUrl}",
-          width: "100%",
-          aspectratio: "16:9",
-          autostart: true,
-          playbackRateControls: true
+        var player = videojs("video-player", {
+          fluid: true,
+          responsive: true,
+          playbackRates: [0.5, 1, 1.5, 2],
+          controlBar: {
+            volumePanel: { inline: false }
+          }
+        });
+        player.on("error", function() {
+          alert("Error loading video. Please try another stream.");
         });
       </script>
     </body>
