@@ -31,6 +31,7 @@ async function generateHomePage(env) {
       <html>
       <head>
         <title>RXPlayer M3U Manager</title>
+        <script src="https://cdn.jsdelivr.net/npm/jwplayer@8.29.0/jwplayer.js"></script>
         <style>
           body { font-family: Arial, sans-serif; text-align: center; background: #181818; color: white; }
           h1 { color: #ff3d00; }
@@ -93,23 +94,23 @@ async function handleGetM3U(env) {
   }
 }
 
-// 🎥 Generate Video Player Page with Multi-Quality & Multi-Audio Support
+// 🎥 Generate Video Player Page with JW Player Ultra Features
 async function generatePlayerPage(streamUrl) {
   return `
     <!DOCTYPE html>
     <html>
     <head>
       <title>RXPlayer</title>
-      <script src="https://cdn.jsdelivr.net/npm/shaka-player/dist/shaka-player.ui.js"></script>
-      <script src="https://cdn.jwplayer.com/libraries/your_jwplayer_key.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/jwplayer@8.29.0/jwplayer.js"></script>
       <style>
         body { text-align: center; background: #181818; color: white; }
-        video { width: 80%; height: auto; }
+        #player { width: 80%; height: auto; }
+        select { margin: 10px; padding: 5px; }
       </style>
     </head>
     <body>
       <h1>RXPlayer</h1>
-      <video id="video" controls autoplay></video>
+      <div id="player"></div>
       <div>
         <label for="quality">Quality: </label>
         <select id="quality"></select>
@@ -117,48 +118,38 @@ async function generatePlayerPage(streamUrl) {
         <select id="audio"></select>
       </div>
       <script>
-        document.addEventListener("DOMContentLoaded", function() {
-          let videoElement = document.getElementById("video");
-          let streamUrl = "${streamUrl}";
+        let player = jwplayer("player").setup({
+          file: "${streamUrl}",
+          width: "100%",
+          aspectratio: "16:9",
+          autostart: true,
+          playbackRateControls: true
+        });
 
-          if (streamUrl.includes(".m3u8") || streamUrl.includes(".mpd")) {
-            let player = new shaka.Player(videoElement);
-            player.load(streamUrl).then(() => {
-              let qualities = player.getVariantTracks();
-              let audioTracks = player.getAudioTracks();
+        player.on("ready", function() {
+          let levels = player.getQualityLevels();
+          let qualitySelect = document.getElementById("quality");
+          levels.forEach((q, i) => {
+            let option = document.createElement("option");
+            option.value = i;
+            option.textContent = q.label || (q.height + "p");
+            qualitySelect.appendChild(option);
+          });
+          qualitySelect.addEventListener("change", function() {
+            player.setCurrentQuality(parseInt(this.value));
+          });
 
-              let qualitySelect = document.getElementById("quality");
-              qualities.forEach(q => {
-                let option = document.createElement("option");
-                option.value = q.id;
-                option.textContent = q.height + "p";
-                qualitySelect.appendChild(option);
-              });
-              qualitySelect.addEventListener("change", () => {
-                player.selectVariantTrack(qualities.find(q => q.id == qualitySelect.value), true);
-              });
-
-              let audioSelect = document.getElementById("audio");
-              audioTracks.forEach(a => {
-                let option = document.createElement("option");
-                option.value = a.id;
-                option.textContent = a.language;
-                audioSelect.appendChild(option);
-              });
-              audioSelect.addEventListener("change", () => {
-                player.selectAudioTrack(audioTracks.find(a => a.id == audioSelect.value));
-              });
-            }).catch(error => console.error("Error loading stream:", error));
-          } else {
-            jwplayer(videoElement).setup({
-              file: streamUrl,
-              width: "100%",
-              aspectratio: "16:9",
-              autostart: true
-            }).on("error", function(event) {
-              console.error("JW Player Error:", event);
-            });
-          }
+          let audioTracks = player.getAudioTracks();
+          let audioSelect = document.getElementById("audio");
+          audioTracks.forEach((a, i) => {
+            let option = document.createElement("option");
+            option.value = i;
+            option.textContent = a.label || "Track " + (i + 1);
+            audioSelect.appendChild(option);
+          });
+          audioSelect.addEventListener("change", function() {
+            player.setCurrentAudioTrack(parseInt(this.value));
+          });
         });
       </script>
     </body>
