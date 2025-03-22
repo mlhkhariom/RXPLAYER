@@ -111,7 +111,7 @@ async function extractM3UStreams(m3uUrl) {
   }
 }
 
-// 🎥 Generate Video Player Page with Quality & Track Selection Under Player
+// 🎥 Generate Video Player Page (Auto Quality & Audio)
 async function generatePlayerPage(streamUrl) {
   return `
     <!DOCTYPE html>
@@ -122,51 +122,18 @@ async function generatePlayerPage(streamUrl) {
       <style>
         body { text-align: center; background: #181818; color: white; }
         #player { width: 80%; height: auto; }
-        .controls { margin-top: 10px; }
       </style>
     </head>
     <body>
       <h1>RXPlayer</h1>
       <div id="player"></div>
-      <div class="controls">
-        <label for="quality">Quality: </label>
-        <select id="quality"></select>
-        <label for="audio">Audio: </label>
-        <select id="audio"></select>
-      </div>
       <script>
-        let player = jwplayer("player").setup({
+        jwplayer("player").setup({
           file: "${streamUrl}",
           width: "100%",
           aspectratio: "16:9",
           autostart: true,
           playbackRateControls: true
-        });
-
-        player.on("ready", function() {
-          let levels = player.getQualityLevels();
-          let qualitySelect = document.getElementById("quality");
-          levels.forEach((q, i) => {
-            let option = document.createElement("option");
-            option.value = i;
-            option.textContent = q.label || (q.height + "p");
-            qualitySelect.appendChild(option);
-          });
-          qualitySelect.addEventListener("change", function() {
-            player.setCurrentQuality(parseInt(this.value));
-          });
-
-          let audioTracks = player.getAudioTracks();
-          let audioSelect = document.getElementById("audio");
-          audioTracks.forEach((a, i) => {
-            let option = document.createElement("option");
-            option.value = i;
-            option.textContent = a.label || "Track " + (i + 1);
-            audioSelect.appendChild(option);
-          });
-          audioSelect.addEventListener("change", function() {
-            player.setCurrentAudioTrack(parseInt(this.value));
-          });
         });
       </script>
     </body>
