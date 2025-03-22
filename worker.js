@@ -11,6 +11,9 @@ export default {
       return handleGetM3U(env);
     } else if (path.startsWith("/api/m3u-parser")) {
       return fetchM3UStreams(request, env);
+    } else if (path.startsWith("/play/")) {
+      const streamUrl = decodeURIComponent(url.searchParams.get("stream"));
+      return new Response(await generatePlayerPage(streamUrl), { headers: { "Content-Type": "text/html" } });
     } else {
       return new Response("404 Not Found", { status: 404 });
     }
@@ -32,7 +35,7 @@ async function generateHomePage(env) {
         .m3u-container { width: 60%; margin: auto; text-align: left; }
         .m3u-box { background: #333; padding: 10px; margin: 10px; border-radius: 5px; }
         .stream-links { display: flex; flex-wrap: wrap; gap: 5px; }
-        .stream-box { background: #555; padding: 5px 10px; border-radius: 3px; }
+        .stream-box { background: #555; padding: 5px 10px; border-radius: 3px; cursor: pointer; }
       </style>
     </head>
     <body>
@@ -68,7 +71,7 @@ async function generateM3UList(env) {
     html += `<div class="m3u-box">
                <h3>${item.name}</h3>
                <div class="stream-links">
-                 ${streams.map(link => `<span class="stream-box">${link}</span>`).join('')}
+                 ${streams.map(link => `<a href="/play/?stream=${encodeURIComponent(link)}" class="stream-box">${link}</a>`).join('')}
                </div>
              </div>`;
   }
@@ -100,4 +103,42 @@ async function fetchM3UStreams(m3uUrl) {
 
   return lines.filter(line => line.includes(".m3u8") || line.includes(".mp4") || line.includes(".ts"))
               .map(line => line.trim());
+}
+
+// 🎥 Generate Video Player Page
+async function generatePlayerPage(streamUrl) {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>RXPlayer</title>
+      <script src="https://cdn.jsdelivr.net/npm/shaka-player/dist/shaka-player.ui.js"></script>
+      <script src="https://cdn.jwplayer.com/libraries/your_jwplayer_key.js"></script>
+      <style>
+        body { text-align: center; background: #181818; color: white; }
+        video { width: 80%; height: auto; }
+      </style>
+    </head>
+    <body>
+      <h1>RXPlayer</h1>
+      <video id="video" controls autoplay></video>
+      <script>
+        document.addEventListener("DOMContentLoaded", function() {
+          let streamUrl = "${streamUrl}";
+          if (streamUrl.includes(".m3u8") || streamUrl.includes(".mpd")) {
+            let player = new shaka.Player(document.getElementById("video"));
+            player.load(streamUrl);
+          } else {
+            jwplayer("video").setup({
+              file: streamUrl,
+              width: "100%",
+              aspectratio: "16:9",
+              autostart: true
+            });
+          }
+        });
+      </script>
+    </body>
+    </html>
+  `;
 }
