@@ -10,8 +10,6 @@ export default {
         return await handleAddM3U(request, env);
       } else if (path.startsWith("/api/get-m3u")) {
         return await handleGetM3U(env);
-      } else if (path.startsWith("/api/m3u-parser")) {
-        return await fetchM3UStreams(request, env);
       } else if (path.startsWith("/play/")) {
         const streamUrl = decodeURIComponent(url.searchParams.get("stream"));
         return new Response(await generatePlayerPage(streamUrl), { headers: { "Content-Type": "text/html" } });
@@ -71,37 +69,12 @@ async function generateHomePage(env) {
   }
 }
 
-// 📌 Generate M3U List with Stream Links
-async function generateM3UList(env) {
-  try {
-    const m3uList = await env.M3U_DATA.list();
-    let html = "";
-
-    for (let item of m3uList.keys) {
-      let streams = await fetchM3UStreams(item.name);
-      html += `<div class="m3u-box">
-                 <h3>${item.name}</h3>
-                 <div class="stream-links">
-                   ${streams.map(link => `<a href="/play/?stream=${encodeURIComponent(link)}" class="stream-box">${link}</a>`).join('')}
-                 </div>
-               </div>`;
-    }
-
-    return html || "<p>No M3U data stored.</p>";
-  } catch (error) {
-    return `<p>Error fetching M3U data: ${error.message}</p>`;
-  }
-}
-
-// 📡 Add M3U URL to KV Storage with Validation
+// 📡 Add M3U URL to KV Storage
 async function handleAddM3U(request, env) {
   try {
     const url = new URL(request.url);
     const m3uUrl = url.searchParams.get("url");
     if (!m3uUrl) throw new Error("No URL provided");
-
-    // Validate URL format
-    if (!m3uUrl.startsWith("http")) throw new Error("Invalid URL format");
 
     await env.M3U_DATA.put(m3uUrl, "stored");
     return new Response(JSON.stringify({ message: "M3U added successfully" }), { headers: { "Content-Type": "application/json" } });
@@ -120,21 +93,7 @@ async function handleGetM3U(env) {
   }
 }
 
-// 📡 Extract Stream Links from M3U
-async function fetchM3UStreams(m3uUrl) {
-  try {
-    const response = await fetch(m3uUrl);
-    const text = await response.text();
-    const lines = text.split("\n");
-
-    return lines.filter(line => line.includes(".m3u8") || line.includes(".mp4") || line.includes(".ts"))
-                .map(line => line.trim());
-  } catch (error) {
-    return [];
-  }
-}
-
-// 🎥 Generate Video Player Page
+// 🎥 Generate Video Player Page with Multi-Quality & Multi-Audio Support
 async function generatePlayerPage(streamUrl) {
   return `
     <!DOCTYPE html>
@@ -151,18 +110,53 @@ async function generatePlayerPage(streamUrl) {
     <body>
       <h1>RXPlayer</h1>
       <video id="video" controls autoplay></video>
+      <div>
+        <label for="quality">Quality: </label>
+        <select id="quality"></select>
+        <label for="audio">Audio: </label>
+        <select id="audio"></select>
+      </div>
       <script>
         document.addEventListener("DOMContentLoaded", function() {
+          let videoElement = document.getElementById("video");
           let streamUrl = "${streamUrl}";
+
           if (streamUrl.includes(".m3u8") || streamUrl.includes(".mpd")) {
-            let player = new shaka.Player(document.getElementById("video"));
-            player.load(streamUrl);
+            let player = new shaka.Player(videoElement);
+            player.load(streamUrl).then(() => {
+              let qualities = player.getVariantTracks();
+              let audioTracks = player.getAudioTracks();
+
+              let qualitySelect = document.getElementById("quality");
+              qualities.forEach(q => {
+                let option = document.createElement("option");
+                option.value = q.id;
+                option.textContent = q.height + "p";
+                qualitySelect.appendChild(option);
+              });
+              qualitySelect.addEventListener("change", () => {
+                player.selectVariantTrack(qualities.find(q => q.id == qualitySelect.value), true);
+              });
+
+              let audioSelect = document.getElementById("audio");
+              audioTracks.forEach(a => {
+                let option = document.createElement("option");
+                option.value = a.id;
+                option.textContent = a.language;
+                audioSelect.appendChild(option);
+              });
+              audioSelect.addEventListener("change", () => {
+                player.selectAudioTrack(audioTracks.find(a => a.id == audioSelect.value));
+              });
+            }).catch(error => console.error("Error loading stream:", error));
           } else {
-            jwplayer("video").setup({
+            jwplayer(videoElement).setup({
               file: streamUrl,
               width: "100%",
               aspectratio: "16:9",
               autostart: true
+            }).on("error", function(event) {
+              console.error("JW Player Error:", event);
             });
           }
         });
