@@ -17,11 +17,9 @@ export default {
   }
 };
 
-// 📌 Generate UI Homepage
+// 📌 Generate Homepage UI
 async function generateHomePage(env) {
   const m3uList = await env.M3U_DATA.list();
-  const keys = m3uList.keys.map(item => item.name);
-  
   let html = `
     <!DOCTYPE html>
     <html>
@@ -31,7 +29,10 @@ async function generateHomePage(env) {
         body { font-family: Arial, sans-serif; text-align: center; background: #181818; color: white; }
         h1 { color: #ff3d00; }
         input, button { padding: 10px; margin: 10px; }
-        .m3u-list { text-align: left; margin: auto; width: 50%; }
+        .m3u-container { width: 60%; margin: auto; text-align: left; }
+        .m3u-box { background: #333; padding: 10px; margin: 10px; border-radius: 5px; }
+        .stream-links { display: flex; flex-wrap: wrap; gap: 5px; }
+        .stream-box { background: #555; padding: 5px 10px; border-radius: 3px; }
       </style>
     </head>
     <body>
@@ -40,9 +41,8 @@ async function generateHomePage(env) {
         <input type="text" id="m3u-url" placeholder="Enter M3U URL" required>
         <button type="submit">Add M3U</button>
       </form>
-      <h2>Stored M3U Links:</h2>
-      <div class="m3u-list">
-        ${keys.map(url => `<p>${url}</p>`).join('')}
+      <div class="m3u-container">
+        ${await generateM3UList(env)}
       </div>
       <script>
         async function addM3U(event) {
@@ -58,7 +58,25 @@ async function generateHomePage(env) {
   return html;
 }
 
-// 🎥 Handle Adding M3U URLs
+// 📌 Generate M3U List with Stream Links
+async function generateM3UList(env) {
+  const m3uList = await env.M3U_DATA.list();
+  let html = "";
+
+  for (let item of m3uList.keys) {
+    let streams = await fetchM3UStreams(item.name);
+    html += `<div class="m3u-box">
+               <h3>${item.name}</h3>
+               <div class="stream-links">
+                 ${streams.map(link => `<span class="stream-box">${link}</span>`).join('')}
+               </div>
+             </div>`;
+  }
+
+  return html || "<p>No M3U data stored.</p>";
+}
+
+// 📡 Add M3U URL to KV Storage
 async function handleAddM3U(request, env) {
   const url = new URL(request.url);
   const m3uUrl = url.searchParams.get("url");
@@ -74,18 +92,12 @@ async function handleGetM3U(env) {
   return new Response(JSON.stringify(m3uList.keys.map(item => item.name)), { headers: { "Content-Type": "application/json" } });
 }
 
-// 📡 Extract Streams from M3U
-async function fetchM3UStreams(request, env) {
-  const url = new URL(request.url);
-  const m3uUrl = url.searchParams.get("m3u");
-  if (!m3uUrl) return new Response(JSON.stringify({ error: "No M3U URL provided" }), { status: 400 });
-
+// 📡 Extract Stream Links from M3U
+async function fetchM3UStreams(m3uUrl) {
   const response = await fetch(m3uUrl);
   const text = await response.text();
   const lines = text.split("\n");
 
-  const streams = lines.filter(line => line.includes(".m3u8") || line.includes(".mp4") || line.includes(".ts"))
-                       .map(line => line.trim());
-
-  return new Response(JSON.stringify({ streams }), { headers: { "Content-Type": "application/json" } });
+  return lines.filter(line => line.includes(".m3u8") || line.includes(".mp4") || line.includes(".ts"))
+              .map(line => line.trim());
 }
