@@ -24,50 +24,46 @@ export default {
 
 // 📌 Generate Homepage UI
 async function generateHomePage(env) {
-  try {
-    const m3uList = await handleGetM3U(env);
-    let html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>RXPlayer M3U Manager</title>
-        <script src="https://cdn.jsdelivr.net/npm/jwplayer@8.29.0/jwplayer.js"></script>
-        <style>
-          body { font-family: Arial, sans-serif; text-align: center; background: #181818; color: white; }
-          h1 { color: #ff3d00; }
-          input, button { padding: 10px; margin: 10px; }
-          .m3u-container { width: 60%; margin: auto; text-align: left; }
-          .m3u-box { background: #333; padding: 10px; margin: 10px; border-radius: 5px; }
-          .stream-links { display: flex; flex-wrap: wrap; gap: 5px; }
-          .stream-box { background: #555; padding: 5px 10px; border-radius: 3px; cursor: pointer; }
-        </style>
-      </head>
-      <body>
-        <h1>RXPlayer M3U Manager</h1>
-        <form onsubmit="addM3U(event)">
-          <input type="text" id="m3u-url" placeholder="Enter M3U URL" required>
-          <button type="submit">Add M3U</button>
-        </form>
-        <div class="m3u-container">
-          ${m3uList}
-        </div>
-        <script>
-          async function addM3U(event) {
-            event.preventDefault();
-            let url = document.getElementById("m3u-url").value;
-            let response = await fetch("/api/add-m3u?url=" + encodeURIComponent(url), { method: "POST" });
-            let result = await response.json();
-            alert(result.message);
-            location.reload();
-          }
-        </script>
-      </body>
-      </html>
-    `;
-    return html;
-  } catch (error) {
-    return `<h1>Error Loading Page</h1><p>${error.message}</p>`;
-  }
+  const m3uListHtml = await handleGetM3U(env);
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>RXPlayer M3U Manager</title>
+      <script src="https://cdn.jsdelivr.net/npm/jwplayer@8.29.0/jwplayer.js"></script>
+      <style>
+        body { font-family: Arial, sans-serif; text-align: center; background: #181818; color: white; }
+        h1 { color: #ff3d00; }
+        input, button { padding: 10px; margin: 10px; }
+        .m3u-container { width: 60%; margin: auto; text-align: left; }
+        .m3u-box { background: #333; padding: 10px; margin: 10px; border-radius: 5px; }
+        .stream-links { display: flex; flex-wrap: wrap; gap: 5px; }
+        .stream-box { background: #555; padding: 5px 10px; border-radius: 3px; cursor: pointer; }
+      </style>
+    </head>
+    <body>
+      <h1>RXPlayer M3U Manager</h1>
+      <form onsubmit="addM3U(event)">
+        <input type="text" id="m3u-url" placeholder="Enter M3U URL" required>
+        <button type="submit">Add M3U</button>
+      </form>
+      <div class="m3u-container">${m3uListHtml}</div>
+      <script>
+        async function addM3U(event) {
+          event.preventDefault();
+          let url = document.getElementById("m3u-url").value;
+          let response = await fetch("/api/add-m3u?url=" + encodeURIComponent(url), { method: "POST" });
+          let result = await response.json();
+          alert(result.message);
+          location.reload();
+        }
+        function playStream(url) {
+          window.location.href = "/play/?stream=" + encodeURIComponent(url);
+        }
+      </script>
+    </body>
+    </html>
+  `;
 }
 
 // 📡 Add M3U URL to KV Storage
@@ -90,9 +86,10 @@ async function handleGetM3U(env) {
     const m3uList = await env.M3U_DATA.list();
     let html = "";
     for (const item of m3uList.keys) {
+      const streamsHtml = await extractM3UStreams(item.name);
       html += `<div class="m3u-box">
         <strong>${item.name}</strong>
-        <div class="stream-links">${await extractM3UStreams(item.name)}</div>
+        <div class="stream-links">${streamsHtml}</div>
       </div>`;
     }
     return html;
@@ -101,19 +98,20 @@ async function handleGetM3U(env) {
   }
 }
 
-// 🛠 Extract Streams from M3U
+// 🛠 Extract Streams from M3U (FIXED)
 async function extractM3UStreams(m3uUrl) {
   try {
     const response = await fetch(m3uUrl);
     const text = await response.text();
     const lines = text.split("\n").filter(line => line.trim() && !line.startsWith("#"));
     return lines.map(url => `<span class="stream-box" onclick="playStream('${url}')">${url}</span>`).join("");
-  } catch {
+  } catch (error) {
+    console.error("Error extracting M3U streams:", error);
     return "<p>Failed to extract streams.</p>";
   }
 }
 
-// 🎥 Generate Video Player Page with JW Player Ultra Features
+// 🎥 Generate Video Player Page with Quality & Track Selection Under Player
 async function generatePlayerPage(streamUrl) {
   return `
     <!DOCTYPE html>
@@ -124,13 +122,13 @@ async function generatePlayerPage(streamUrl) {
       <style>
         body { text-align: center; background: #181818; color: white; }
         #player { width: 80%; height: auto; }
-        select { margin: 10px; padding: 5px; }
+        .controls { margin-top: 10px; }
       </style>
     </head>
     <body>
       <h1>RXPlayer</h1>
       <div id="player"></div>
-      <div>
+      <div class="controls">
         <label for="quality">Quality: </label>
         <select id="quality"></select>
         <label for="audio">Audio: </label>
